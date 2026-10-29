@@ -1,0 +1,112 @@
+name: Build FFAimTool
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Create Xcode project structure
+      run: |
+        mkdir -p FFAimTool.xcodeproj
+        mkdir -p FFAimTool
+
+        # Copy source files
+        cp *.m *.h *.mm FFAimTool/ 2>/dev/null || true
+
+        # Info.plist
+        cat > FFAimTool/Info.plist << 'PLIST'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleName</key>
+          <string>FFAimTool</string>
+          <key>CFBundleIdentifier</key>
+          <string>com.fftool.aim</string>
+          <key>CFBundleVersion</key>
+          <string>1</string>
+          <key>CFBundleShortVersionString</key>
+          <string>1.0</string>
+          <key>CFBundleExecutable</key>
+          <string>FFAimTool</string>
+          <key>CFBundlePackageType</key>
+          <string>APPL</string>
+          <key>UILaunchScreen</key>
+          <dict/>
+          <key>UISupportedInterfaceOrientations</key>
+          <array>
+            <string>UIInterfaceOrientationPortrait</string>
+          </array>
+          <key>MinimumOSVersion</key>
+          <string>13.0</string>
+          <key>LSApplicationQueriesSchemes</key>
+          <array/>
+        </dict>
+        </plist>
+        PLIST
+
+    - name: Generate Xcode project with xcodegen
+      run: |
+        brew install xcodegen
+
+        cat > project.yml << 'YML'
+        name: FFAimTool
+        options:
+          bundleIdPrefix: com.fftool
+          deploymentTarget:
+            iOS: "13.0"
+        targets:
+          FFAimTool:
+            type: application
+            platform: iOS
+            sources:
+              - FFAimTool
+            settings:
+              PRODUCT_BUNDLE_IDENTIFIER: com.fftool.aim
+              PRODUCT_NAME: FFAimTool
+              INFOPLIST_FILE: FFAimTool/Info.plist
+              ARCHS: arm64
+              CODE_SIGNING_REQUIRED: NO
+              CODE_SIGNING_ALLOWED: NO
+              AD_HOC_CODE_SIGNING_ALLOWED: YES
+            dependencies:
+              - sdk: Foundation.framework
+              - sdk: UIKit.framework
+              - sdk: CoreMotion.framework
+        YML
+
+        xcodegen generate
+
+    - name: Build IPA
+      run: |
+        xcodebuild \
+          -project FFAimTool.xcodeproj \
+          -scheme FFAimTool \
+          -sdk iphoneos \
+          -configuration Release \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          ARCHS=arm64 \
+          -derivedDataPath ./build \
+          build
+
+        # Đóng gói IPA
+        APP_PATH=$(find ./build -name "*.app" | head -1)
+        mkdir -p Payload
+        cp -r "$APP_PATH" Payload/FFAimTool.app
+        zip -r FFAimTool.ipa Payload/
+        echo "IPA built: $(du -sh FFAimTool.ipa)"
+
+    - name: Upload IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: FFAimTool-IPA
+        path: FFAimTool.ipa
+        retention-days: 7
